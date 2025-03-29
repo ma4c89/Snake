@@ -1,64 +1,180 @@
+import pygame
 import random
 import time
 
+pygame.init()
+pygame.display.set_caption("Jogo Snake")
+largura, altura = 600, 400
+tela = pygame.display.set_mode((largura, altura))
+relogio = pygame.time.Clock()
 
-# Função para simular a barra de carregamento
-def barra():
-    carga_maxima = 50
-    print("Carregando o programa:\n[", end="")
-    for b in range(carga_maxima + 1):
-        time.sleep(0.1)  # Atraso de 100ms
-        print("-", end="", flush=True)  # Mantém o progresso visível
-    print(">]")
-    print("Concluído\n")
-    time.sleep(1)
+preta = (0, 0, 0)
+branca = (255, 255, 255)
+vermelha = (255, 0, 0)
+verde = (0, 255, 0)
+amarelo = (255, 255, 0)
+azul = (0, 0, 255)
+cinza = (169, 169, 169)
 
+tamanho_quadrado = 10
+velocidade_jogo = 15
+vidas = 3
 
-# Função principal do jogo
-def jogar():
-    jogador = 0
-    computador = 0
-    continuar = 's'
+tipos_comida = {
+    "normal": (verde, 0),
+    "extra": (amarelo, 2),
+    "velocidade": (azul, -1)
+}
 
-    barra()
+def gerar_obstaculos(qtd):
+    obstaculos = []
+    while len(obstaculos) < qtd:
+        obs_x = random.randint(0, (largura // tamanho_quadrado) - 1) * tamanho_quadrado
+        obs_y = random.randint(0, (altura // tamanho_quadrado) - 1) * tamanho_quadrado
+        if [obs_x, obs_y] not in obstaculos:
+            obstaculos.append([obs_x, obs_y])
+    return obstaculos
 
-    print("\t+----------------------------------------------------+")
-    print("\t|                                                    |")
-    print("\t|\t\tBEM-VINDO AO JOGO 21 CONTRA O COMPUTADOR!    |")
-    print("\t|                                                    |")
-    print("\t+----------------------------------------------------+\n")
+def gerar_comida():
+    while True:
+        tipo = random.choice(list(tipos_comida.keys()))
+        comida_x = random.randint(0, (largura // tamanho_quadrado) - 1) * tamanho_quadrado
+        comida_y = random.randint(0, (altura // tamanho_quadrado) - 1) * tamanho_quadrado
+        return comida_x, comida_y, tipo
 
-    while continuar.lower() == 's':
-        # Jogador pega uma carta
-        carta = random.randint(1, 10)
-        jogador += carta
-        print(f"Você recebeu uma carta: {carta}")
-        print(f"Pontuação atual do jogador: {jogador}")
+def desenhar_comida(tamanho, comida_x, comida_y, tipo):
+    cor, efeito = tipos_comida[tipo]
+    pygame.draw.rect(tela, cor, [comida_x, comida_y, tamanho, tamanho])
+    return efeito
 
-        if jogador > 21:
-            print("Você estourou! Computador vence!")
-            return
+def desenhar_cobra(tamanho, pixels, invencivel=False):
+    for pixel in pixels:
+        if invencivel:
+            pygame.draw.rect(tela, (255, 165, 0), [pixel[0], pixel[1], tamanho, tamanho])
+        else:
+            pygame.draw.rect(tela, branca, [pixel[0], pixel[1], tamanho, tamanho])
 
-        # Computador pega uma carta
-        carta = random.randint(1, 10)
-        computador += carta
-        print(f"O computador recebeu uma carta: {carta}")
-        print(f"Pontuação atual do computador: {computador}")
+def desenhar_obstaculos(obstaculos):
+    for obstaculo in obstaculos:
+        pygame.draw.rect(tela, cinza, [obstaculo[0], obstaculo[1], tamanho_quadrado, tamanho_quadrado])
 
-        if computador > 21:
-            print("O computador estourou! Você vence!")
-            return
+def desenhar_pontuacao(pontuacao):
+    fonte = pygame.font.SysFont("Helvetica", 15)
+    texto = fonte.render(f"Pontos: {pontuacao}", True, vermelha)
+    tela.blit(texto, [10, 10])
 
-        # Pergunta ao jogador se ele quer continuar
-        continuar = input("\nDeseja continuar jogando? (s/n): ")
+def desenhar_tempo(tempo_inicial):
+    tempo_atual = int(time.time() - tempo_inicial)
+    fonte = pygame.font.SysFont("Helvetica", 15)
+    texto = fonte.render(f"Tempo {tempo_atual}s", True, vermelha)
+    tela.blit(texto, [largura - 100, 10])
 
-    if jogador > computador:
-        print("Você venceu!")
-    elif jogador < computador:
-        print("O computador venceu!")
-    else:
-        print("Empate!")
+def desenhar_vidas(vidas):
+    fonte = pygame.font.SysFont("Helvetica", 15)
+    texto = fonte.render(f"Vidas: {vidas}", True, vermelha)
+    tela.blit(texto, [10, 28])
 
+def selecionar_velocidade(tecla, velocidade_atual):
+    if tecla == pygame.K_DOWN and velocidade_atual != (0, -tamanho_quadrado):
+        return 0, tamanho_quadrado
+    elif tecla == pygame.K_UP and velocidade_atual != (0, tamanho_quadrado):
+        return 0, -tamanho_quadrado
+    elif tecla == pygame.K_RIGHT and velocidade_atual != (-tamanho_quadrado, 0):
+        return tamanho_quadrado, 0
+    elif tecla == pygame.K_LEFT and velocidade_atual != (tamanho_quadrado, 0):
+        return -tamanho_quadrado, 0
+    return velocidade_atual
 
-# Chama a função principal
-jogar()
+def rodar_jogo():
+    global vidas, velocidade_jogo
+    fim_jogo = False
+
+    x = largura // 2
+    y = altura // 2
+
+    velocidade_x, velocidade_y = 0, 0
+    tamanho_cobra = 1
+    pixels = []
+    obstaculos = gerar_obstaculos(8)
+    comida_x, comida_y, tipo_comida = gerar_comida()
+
+    tempo_inicial = time.time()
+    tempo_invencivel = 0
+
+    while not fim_jogo:
+        tela.fill(preta)
+
+        for evento in pygame.event.get():
+            if evento.type == pygame.QUIT:
+                fim_jogo = True
+            elif evento.type == pygame.KEYDOWN:
+                velocidade_x, velocidade_y = selecionar_velocidade(evento.key, (velocidade_x, velocidade_y))
+
+        efeito_comida = desenhar_comida(tamanho_quadrado, comida_x, comida_y, tipo_comida)
+        desenhar_obstaculos(obstaculos)
+
+        if x < 0 or x >= largura or y < 0 or y >= altura:
+            if tempo_invencivel <= time.time():
+                vidas -= 1
+                tempo_invencivel = time.time() + 10
+                if vidas <= 0:
+                    fim_jogo = True
+                else:
+                    x = largura // 2
+                    y = altura // 2
+                    velocidade_x, velocidade_y = 0, 0
+                    pixels = []
+
+        if [x, y] in obstaculos:
+            if tempo_invencivel <= time.time():
+                vidas -= 1
+                tempo_invencivel = time.time() + 2
+                if vidas <= 0:
+                    fim_jogo = True
+                else:
+                    x = largura // 2
+                    y = altura // 2
+                    velocidade_x, velocidade_y = 0, 0
+                    pixels = []
+
+        x += velocidade_x
+        y += velocidade_y
+
+        pixels.append([x, y])
+        if len(pixels) > tamanho_cobra:
+            del pixels[0]
+
+        for pixel in pixels[:-1]:
+            if pixel == [x, y]:
+                if tempo_invencivel <= time.time():
+                    vidas -= 1
+                    tempo_invencivel = time.time() + 2
+                    if vidas <= 0:
+                        fim_jogo = True
+                    else:
+                        x = largura // 2
+                        y = altura // 2
+                        velocidade_x, velocidade_y = 0, 0
+                        pixels = []
+
+        invencivel = tempo_invencivel > time.time()
+        desenhar_cobra(tamanho_quadrado, pixels, invencivel)
+        desenhar_pontuacao(tamanho_cobra - 1)
+        desenhar_tempo(tempo_inicial)
+        desenhar_vidas(vidas)
+
+        pygame.display.update()
+
+        if x == comida_x and y == comida_y:
+            tamanho_cobra += 1
+            if efeito_comida == 2:
+                tamanho_cobra += 1
+            elif efeito_comida == -1:
+                velocidade_jogo += 2
+            comida_x, comida_y, tipo_comida = gerar_comida()
+
+        relogio.tick(velocidade_jogo)
+
+    pygame.quit()
+
+rodar_jogo()
